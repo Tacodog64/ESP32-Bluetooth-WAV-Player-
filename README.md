@@ -1,6 +1,6 @@
 # ESP32 Bluetooth WAV Player — Handoff Spec
 
-**Current version:** v1.10.3 · file `Working_No_Speaker_v1_10_3.ino` (~4290 lines, single sketch)
+**Current version:** v1.10.4 · file `Working_No_Speaker_v1_10_4.ino` (~4320 lines, single sketch)
 **Size:** 1,372,769 B app (43.6% of a 3 MB OTA slot), 56,220 B globals.
 **Checker:** `verify_sketch.py` — run it after every bulk edit; it encodes the failure classes below.
 **Status:** Bluetooth connect/switch path verified working against serial log. v1.9.3–v1.9.5 changed **no Bluetooth behaviour** except the CoD mask in our own scan filter and the removal of `end()` from deep sleep. See "Open Issues" for what is *not* resolved.
@@ -55,7 +55,7 @@ GPIO 32(1) 33(2) 36(3) 39(4) 34(5) 35(Home)   KCOM -> GND
 | File | Purpose |
 |---|---|
 | ~~`/playlist.txt`~~ | ⚠️ **Does not exist.** No code path opens it — verified v1.10.3. The "playlist" is reservoir-sampled from `catalog.txt` at boot, `cfg.playlistSize` entries, then Fisher-Yates shuffled. This row was wrong in the original spec. |
-| `/catalog.txt` | Up to 2000 song paths (the "catalog" source) |
+| `/catalog.txt` | Up to 2000 song paths. ⚠️ **Lines ≥ `MAX_PATH_LEN` are dropped** by both `loadPlaylist()` and `buildCatalogIndex()` — the song exists on the card but is invisible to the player. The limit was **128** through v1.10.3 and the skip was **silent**; v1.10.4 raises it to **256** and logs `[PLAYLIST] SKIPPED (n chars…)`. If you are chasing "a song that never plays", check this first. |
 | `/settings.txt` | `key=value`, includes `vol_<devicename>=NN` per-device volume |
 | `/btdevices.txt` | Up to 8 saved BT device names, most-recent-first |
 | `/session.txt` | v1.9.4 deep-sleep session: queue, index, resume offset. Written on deep sleep, read **only** on ext0 wake, deleted after restore |
@@ -63,7 +63,9 @@ GPIO 32(1) 33(2) 36(3) 39(4) 34(5) 35(Home)   KCOM -> GND
 | `/firmware.bin` | v1.10.0 firmware image. Offered at boot, exact filename only, deleted after a successful install |
 | `/firmware.md5` | Optional checksum for the above. Absence is warned about, not silent |
 
-Audio is **44.1 kHz 16-bit stereo WAV only** (`BYTES_PER_SEC = 44100*2`). No decoding.
+Audio is **44.1 kHz 16-bit MONO WAV only** (`BYTES_PER_SEC = 44100*2 = 88200`). No decoding.
+
+⚠️ **This line said "stereo" until v1.10.3 and was wrong.** `get_audio_data()` pops `want*2` bytes and copies ONE 16-bit sample to both output channels, and 88200 B/s is mono 16-bit — stereo would be 176400. The preprocessing script's `ffmpeg -ac 1` is correct; "fixing" it to stereo per the old wording makes the player read L,R,L,R as consecutive mono samples, i.e. double speed and wrong pitch. A PCM frame here is **2 bytes**, not 4 (the session-resume comment in the sketch still says 4 — the `&~3u` mask is a safe superset of 2-byte alignment, so the code is fine and only the comment is wrong).
 
 ---
 
